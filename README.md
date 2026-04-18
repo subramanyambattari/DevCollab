@@ -91,6 +91,10 @@ docker run -p 5000:5000 \
 
 4. Render will expose the app on its public URL. The backend serves the built React app from `client/dist`, so no separate frontend deployment is needed.
 
+## Final Testing
+
+- See [FINAL_TESTING_CHECKLIST.md](./FINAL_TESTING_CHECKLIST.md) for the end-to-end verification steps after deployment.
+
 ## Notes
 
 - Use the same MongoDB database across deployments to keep rooms, tasks, notes, and chat history.
