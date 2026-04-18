@@ -95,6 +95,7 @@ export default function App() {
   const [roomForm, setRoomForm] = useState(emptyRoom);
   const [selectedRoomId, setSelectedRoomId] = useState('');
   const [dashboard, setDashboard] = useState(null);
+  const [roomEditName, setRoomEditName] = useState('');
   const [taskForm, setTaskForm] = useState(emptyTask);
   const [noteForm, setNoteForm] = useState(emptyNote);
   const [messageText, setMessageText] = useState('');
@@ -141,6 +142,7 @@ export default function App() {
     const data = await request(`/api/rooms/${roomId}/dashboard`, { token: authToken });
     setDashboard(data);
     setSelectedRoomId(roomId);
+    setRoomEditName(data.room?.name || '');
   };
 
   useEffect(() => {
@@ -200,6 +202,27 @@ export default function App() {
       showError(payload?.message || 'Room error.');
     });
 
+    socket.on('rooms:updated', async () => {
+      try {
+        const roomList = await loadRooms();
+        const currentRoomId = selectedRoomIdRef.current;
+        if (!currentRoomId) return;
+
+        try {
+          await loadDashboard(currentRoomId);
+        } catch (dashboardError) {
+          const stillExists = roomList.some((room) => room.id === currentRoomId);
+          if (!stillExists) {
+            setDashboard(null);
+            setSelectedRoomId('');
+            setRoomEditName('');
+          }
+        }
+      } catch (refreshError) {
+        showError(refreshError.message);
+      }
+    });
+
     socket.on('message:new', (message) => {
       if (message.room !== selectedRoomIdRef.current) return;
       setDashboard((current) => {
@@ -234,6 +257,7 @@ export default function App() {
   }, [selectedRoomId]);
 
   const groupedTasks = useMemo(() => groupTasks(dashboard?.tasks || []), [dashboard?.tasks]);
+  const isRoomOwner = Boolean(dashboard?.room?.owner?._id && user?.id && dashboard.room.owner._id === user.id);
 
   const handleAuthSubmit = async (event) => {
     event.preventDefault();
@@ -308,6 +332,59 @@ export default function App() {
     setSelectedRoomId(roomId);
     setFeedback(null);
     await loadDashboard(roomId);
+  };
+
+  const handleUpdateRoom = async (event) => {
+    event.preventDefault();
+    if (!selectedRoomId) return;
+
+    setBusy(true);
+    setFeedback(null);
+
+    try {
+      await request(`/api/rooms/${selectedRoomId}`, {
+        token,
+        method: 'PATCH',
+        body: { name: roomEditName }
+      });
+      await loadRooms();
+      await loadDashboard(selectedRoomId);
+      showSuccess('Room updated.');
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteRoom = async () => {
+    if (!selectedRoomId) return;
+
+    const confirmDelete = window.confirm('Delete this room and all related messages, tasks, and notes?');
+    if (!confirmDelete) return;
+
+    setBusy(true);
+    setFeedback(null);
+
+    try {
+      await request(`/api/rooms/${selectedRoomId}`, {
+        token,
+        method: 'DELETE'
+      });
+      const updatedRooms = await loadRooms();
+      if (updatedRooms.length > 0) {
+        await loadDashboard(updatedRooms[0].id);
+      } else {
+        setDashboard(null);
+        setSelectedRoomId('');
+        setRoomEditName('');
+      }
+      showSuccess('Room deleted.');
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleSendMessage = async (event) => {
@@ -631,6 +708,31 @@ export default function App() {
                 ) : null}
               </div>
             </div>
+
+            {dashboard && isRoomOwner ? (
+              <form className="mt-4 grid gap-3 rounded-3xl border border-white/10 bg-white/5 p-4 md:grid-cols-[1fr_auto_auto] md:items-center" onSubmit={handleUpdateRoom}>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Room settings</p>
+                  <input
+                    className="input-base mt-2"
+                    value={roomEditName}
+                    onChange={(event) => setRoomEditName(event.target.value)}
+                    placeholder="Room name"
+                  />
+                </div>
+                <button className="button-primary md:self-end" disabled={busy} type="submit">
+                  Save name
+                </button>
+                <button
+                  className="button-secondary border-rose-500/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20 md:self-end"
+                  disabled={busy}
+                  onClick={handleDeleteRoom}
+                  type="button"
+                >
+                  Delete room
+                </button>
+              </form>
+            ) : null}
 
             <div className="mt-4">
               <Feedback feedback={feedback} />

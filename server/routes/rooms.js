@@ -71,6 +71,14 @@ function formatNote(note) {
   };
 }
 
+async function emitRoomsUpdated(io, userIds = []) {
+  if (!io) return;
+
+  io.emit('rooms:updated', {
+    userIds: userIds.map((id) => id.toString())
+  });
+}
+
 router.use(requireAuth);
 
 router.get('/', async (req, res) => {
@@ -133,6 +141,59 @@ router.post('/join', async (req, res) => {
     res.json({ room: roomSummary(room) });
   } catch (error) {
     res.status(500).json({ message: 'Could not join room.' });
+  }
+});
+
+router.patch('/:roomId', async (req, res) => {
+  try {
+    const room = await Room.findOne({ _id: req.params.roomId, owner: req.user._id });
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found.' });
+    }
+
+    const name = String(req.body.name || '').trim();
+    if (!name) {
+      return res.status(400).json({ message: 'Room name is required.' });
+    }
+
+    room.name = name;
+    await room.save();
+    await room.populate('owner', 'username');
+    await room.populate('members', 'username');
+
+    const io = req.app.get('io');
+    await emitRoomsUpdated(io, room.members);
+
+    res.json({ room: roomSummary(room) });
+  } catch (error) {
+    res.status(500).json({ message: 'Could not update room.' });
+  }
+});
+
+router.delete('/:roomId', async (req, res) => {
+  try {
+    const room = await Room.findOne({ _id: req.params.roomId, owner: req.user._id }).populate(
+      'members',
+      'username'
+    );
+
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found.' });
+    }
+
+    await Promise.all([
+      Message.deleteMany({ room: room._id }),
+      Task.deleteMany({ room: room._id }),
+      Note.deleteMany({ room: room._id }),
+      Room.deleteOne({ _id: room._id })
+    ]);
+
+    const io = req.app.get('io');
+    await emitRoomsUpdated(io, room.members);
+
+    res.json({ ok: true, roomId: room._id.toString() });
+  } catch (error) {
+    res.status(500).json({ message: 'Could not delete room.' });
   }
 });
 
