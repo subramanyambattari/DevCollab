@@ -2,7 +2,14 @@ node_modules
 client/node_modules
 server/node_modules
 client/dist
+server/dist
 .env
 .env.*
 npm-debug.log*
 *.log
+shared/types.js
+shared/types.d.ts
+shared/types.d.ts.map
+server/tests/*.js
+server/tests/*.d.ts
+server/tests/*.d.ts.map
